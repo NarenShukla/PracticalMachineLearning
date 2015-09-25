@@ -1,0 +1,318 @@
+---
+output: html_document
+---
+
+## Machine Learning Project : Predicting Wellness factor of Human Activity Recognition research 
+#### By : Narendra S. Shukla (September '2015)
+
+### Executive Summary : 
+Using devices such as **Jawbone Up, Nike FuelBand, and Fitbit** it is now possible to collect a large amount of data about personal activity. Often, the emphasis is on **how** much of a particular activity is done, rather than **how well** it is done. In this exercise, 6 young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification **(Class A)**, throwing the elbows to the front **(Class B)**, lifting the dumbbell only halfway **(Class C)**, lowering the dumbbell only halfway **(Class D)** and throwing the hips to the front **(Class E)**. The excercise information is captured as **19622** observations of **160** variables. Our objective is to **predict the manner** in which they did the exercise
+
+### Tidying the Data & Exploratory Data Analysis
+
+We first start by loadng the data.
+
+
+```{r loadData,message=FALSE}
+build <- read.csv("./pml-training.csv", header=T,  sep=",", na.strings=c("NA",""),
+                stringsAsFactors=FALSE)
+build$classe <- factor(build$classe)
+library(caret)
+inTrain <- createDataPartition(y=build$classe, p=0.75, list=FALSE)
+training <- build[inTrain,]
+validation <- build[-inTrain,]
+
+```
+
+We notice that there are quite a few columns with NAs. We retain only those columns where NAs are less than or equal to 5%. We also remove {X} and {user_name} columns. 
+
+```{r tidyTrainingData,message=FALSE}
+trainingNew <- training[, colSums(is.na(training)) <= (0.05*nrow(training))]
+trainingNew <- trainingNew[,(3:60)]
+trainingNew$new_window <- factor(trainingNew$new_window)
+
+```
+
+We now plot a chart of **roll_belt** and **pitch_forearm** to see how response variable **classe** is distributed. (Similar analysis can be performed on other predictor variables),
+
+```{r plotDecisionBoundary,fig.height=4, fig.width=6,message=FALSE}
+library(ggplot2)
+qplot(roll_belt, pitch_forearm, colour=classe, data=trainingNew, main="Figure 1 : Decision Boundary")
+
+```
+
+We notice that the decision boundary is highly **Non-Linear**. So, when we run SVM, as shown below, we shall use "Radial" kernel. 
+
+### Model Training, Prediction Accuracy, Out of Sample Error
+
+Now we start applying models to training data. We shall apply 6 models. 
+
+1. **Single Tree Model :** Easy to explain. Better graphical display and interpretability. Sometimes lack predictive accuracy. May overfit training data
+2. **Single Tree Model with Repeated Cross-Validation :** Provide better Bias-Variance Trde-Off. Provide reduced Test Error Rate. 
+3. **Linear Discriminant Analysis :** Assumes Multivariate Gaussian distribution for each class, with Class-specific Mean Vector and Common Co-Variance matrix. Uses Bayes' Theorem for Classification
+4. **Random Forest :** Extension of Bagging Model, with Predictor sub-set resampling at every split. Reduction in Variance is obtained by de-correlating the trees
+5. **Support Vector Machines :** One of the best "out of the box" classifiers. Uses Maximum Margin Classifier with separating hyperplane. SVM uses kernels to enlarge feature space. Only "Support Vectors" participate in Classification
+6. **Boosting :** Statistical Learning method that learns slowly by fitting small trees to the residuals and Applying weights. Doesn't use Bootstrap Sampling. Each tree depends upon previously grown tree
+
+### Single Tree Model
+
+```{r treeModel,eval=FALSE}
+tree.model <- train(classe ~ .,method="rpart",data=trainingNew)
+save(tree.model,file="treemodel.rda")
+
+```
+
+Here's how the tree looks like,
+
+```{r printTree, fig.height=3, fig.width=6,message=FALSE}
+library(rattle)
+library(rpart.plot)
+fancyRpartPlot(tree.model$finalModel,main="Figure 2 : Classification Tree")
+
+```
+
+Now we apply this model to **validation** data-set,
+
+```{r predtreeModel}
+load("treemodel.rda")
+predTree <- predict(tree.model,validation)
+confusionMatrix(predTree, validation$classe)$table
+confusionMatrix(predTree, validation$classe)$overall[1]
+
+```
+
+```{r accurarytreeModel,echo=FALSE}
+accTreeModel <- round(confusionMatrix(predTree, validation$classe)$overall[[1]]*100,2)
+errTreeModel <- round(100-accTreeModel,2)
+```
+
+The confusion matrix shows **`r accTreeModel`%** accuracy. Out of Sample error is **`r errTreeModel`%**. The "Out of Sample" error rate is calculated as **(100 - Accuracy)**. We can definitely do better.
+
+### Single Tree Model with Repeated Cross-Validation
+
+We shall use **10 fold cross-validation, repeated 3 times**.
+
+```{r treeModel2,eval=FALSE}
+cvCtrl <- trainControl(method ="repeatedcv", repeats = 3)
+tree.model2 <- train(classe ~ ., method="rpart", 
+                         data=trainingNew, tuneLength = 30, trControl=cvCtrl)
+save(tree.model2,file="treemodelcv.rda")
+
+```
+
+Applying this model to **validation** data-set,
+
+```{r predtreeModel2}
+load("treemodelcv.rda")
+predTree2 <- predict(tree.model2,validation)
+confusionMatrix(predTree2, validation$classe)$table
+confusionMatrix(predTree2, validation$classe)$overall[1]
+
+```
+
+```{r accurarytreeModel2,echo=FALSE}
+accTreeModel2 <- round(confusionMatrix(predTree2, validation$classe)$overall[[1]]*100,2)
+errTreeModel2 <- round(100-accTreeModel2,2)
+```
+
+The confusion matrix shows **`r accTreeModel2`%** accuracy. Out of Sample error is **`r errTreeModel2`%**. 
+
+
+### Linear Discriminant Analysis
+
+
+```{r ldaModel,eval=FALSE}
+lda.model <- train(classe ~ ., method="lda",data=trainingNew)
+save(lda.model,file="ldamodel.rda")
+
+```
+
+Now apply this model to **validation** data-set,
+
+```{r predldaModel,message=FALSE}
+load("ldamodel.rda")
+predLDA <- predict(lda.model,validation)
+confusionMatrix(predLDA, validation$classe)$table
+confusionMatrix(predLDA, validation$classe)$overall[1]
+
+```
+
+```{r accuraryLdaModel,echo=FALSE}
+accLdaModel <- round(confusionMatrix(predLDA, validation$classe)$overall[[1]]*100,2)
+errLdaModel <- round(100-accLdaModel,2)
+```
+
+The confusion matrix shows **`r accLdaModel`%** accuracy. Out of Sample error is **`r errLdaModel`%**. So Cross-Validated SingleTree model actually did better. Let's continue exploring other models. 
+
+
+### Random Forest
+
+Let's apply **10 fold cross-validation** here,
+
+```{r rfModel,eval=FALSE}
+rf.model <- train(classe ~ ., method="rf",
+                    data=trainingNew, trControl=trainControl(method="cv",number=10),
+                    prox=TRUE, allowParallel=TRUE)
+save(rf.model,file="rfmodelcv.rda")
+
+```
+
+Let's see how the model looks,
+
+```{r seeRFmodel}
+load("rfmodelcv.rda")
+rf.model
+
+```
+
+Let's plot the **Variable Importance** now,
+
+```{r seeRFmodelVarImp,message=FALSE,fig.height=4, fig.width=6}
+plot(varImp(rf.model),top=10,main="Figure 3 : Variable Importance")
+
+```
+
+We see the **Top 10** most important variables used by this model. 
+
+Let's use this model against **validation** data-set,
+
+```{r predRFModel,message=FALSE}
+predRF <- predict(rf.model,validation)
+confusionMatrix(predRF, validation$classe)$table
+confusionMatrix(predRF, validation$classe)$overall[1]
+
+```
+
+
+```{r accuraryRFModel,echo=FALSE}
+accRFModel <- round(confusionMatrix(predRF, validation$classe)$overall[[1]]*100,2)
+errRFModel <- round(100-accRFModel,2)
+```
+
+The confusion matrix shows **`r accRFModel`%** accuracy. Out of Sample error is **`r errRFModel`%**. This is, by far, the best result we got so far.
+
+
+### Support Vector Machines
+
+
+For this iteration of SVM, we use **radial** kernal with cost **1** and gamma **0.1**,
+
+```{r SVMmodel,eval=FALSE}
+library (e1071)
+svm.model <- svm(classe ~ ., data=trainingNew , kernel ="radial", cost =1, gamma=0.1 )
+save(svm.model,file="svmmodel.rda")
+
+```
+
+This is how the model looks,
+
+```{r seeSVMmodel}
+load("svmmodel.rda")
+svm.model
+
+```
+
+Now let's apply this model to **validation** data-set,
+
+```{r predSVMmodel,message=FALSE}
+library (e1071)
+predSVM <- predict(svm.model,validation)
+confusionMatrix(predSVM, validation$classe)$table
+confusionMatrix(predSVM, validation$classe)$overall[1]
+
+```
+
+```{r accurarySVMmodel,echo=FALSE}
+accSVMmodel <- round(confusionMatrix(predSVM, validation$classe)$overall[[1]]*100,2)
+errSVMmodel <- round(100-accSVMmodel,2)
+```
+
+The confusion matrix shows **`r accSVMmodel`%** accuracy. Out of Sample error is **`r errSVMmodel`%**. Not Bad. 
+
+
+### Boosting
+
+We run our last model now. 
+
+
+```{r Boostmodel,eval=FALSE}
+boost.model <- train(classe ~ ., method="gbm",data=trainingNew,verbose=FALSE)
+save(boost.model,file="boostmodel.rda")
+
+```
+
+Model uses **n.trees = 150, interaction.depth = 3, shrinkage = 0.1 and n.minobsinnode = 10**.
+
+Now let's apply this model to **validation** data-set,
+
+```{r predBoostModel,message=FALSE}
+predBoost <- predict(boost.model,validation)
+confusionMatrix(predBoost, validation$classe)$table
+confusionMatrix(predBoost, validation$classe)$overall[1]
+
+```
+
+```{r accuraryBoostModel,echo=FALSE}
+accBoostModel <- round(confusionMatrix(predBoost, validation$classe)$overall[[1]]*100,2)
+errBoostModel <- round(100-accBoostModel,2)
+```
+
+The confusion matrix shows **`r accBoostModel`%** accuracy. Out of Sample error is **`r errBoostModel`%**. This, again, turns out to be one of the **best** models.  
+
+
+### Selecting the FINAL MODEL
+
+Let's plot ROC curves for all models together.
+
+```{r plotROCcurves,message=FALSE,fig.height=5, fig.width=5,results='hide'}
+library(pROC)
+plot.roc(x = validation$classe, predictor = as.numeric(predTree), col="yellow", legacy.axes=TRUE,
+          main="Figure 4 : ROC Curves")
+plot.roc(x = validation$classe, predictor = as.numeric(predTree2), col="green",add=TRUE)
+plot.roc(x = validation$classe, predictor = as.numeric(predLDA), col="magenta",add=TRUE)
+plot.roc(x = validation$classe, predictor = as.numeric(predRF), col="blue",add=TRUE, lwd=3)
+plot.roc(x = validation$classe, predictor = as.numeric(predSVM), col="black",add=TRUE)
+plot.roc(x = validation$classe, predictor = as.numeric(predBoost), col="red",add=TRUE)
+
+legend("bottomright", legend=c("Single Tree","CrossValidated Tree", "LDA", "Random Forest", 
+                               "Support Vector Machine", "Boost"),
+       col=c("yellow", "green", "magenta", "blue", "black", "red"), lwd=3)
+
+```
+
+As you can see, **Random Forest** and **Boost** models have best ROC curves. Followed by **SVM**.
+
+We select **Random Forest Model** as our final choice.
+
+We could have also tried **Model Ensembling** ie. Combining Predictors. As it turns out, the accurary of the **Combined Model** is less than some of our best-sellers.
+
+Now we apply our final model to **testing** data-set,
+
+```{r applyFinalModel,echo=TRUE, eval=FALSE}
+testing <- read.csv("./pml-testing.csv", header=T,  sep=",", na.strings=c("NA",""),
+                 stringsAsFactors=FALSE)
+predFinal <- as.character(predict(rf.model,testing))
+if (!file.exists("results")) {dir.create("./results")}
+pml_write_files = function(x){
+        n = length(x)
+        for(i in 1:n){
+                filename = paste0("./results/problem_id_", i, ".txt")
+                write.table(x[i], file = filename, quote = FALSE, row.names = FALSE, col.names = FALSE)
+        }
+}
+pml_write_files(predFinal)
+
+```
+
+It is observed that our final model performed **exceptionally well** on **testing** data-set. 
+
+
+### Conclusion
+
+Human Activity Recognition - **HAR** - has emerged as a key research area in the last few years. Based on exercise execution method of participants, it is now possible to **Classify** their exercise execution **Quality**. This **How Well** approach can provide useful information to a large variety of applications, such as "sports training".
+
+### References
+
+1. This dataset is licensed under the Creative Commons license (CC BY-SA). Read more: http://groupware.les.inf.puc-rio.br/har#ixzz3mf4CHT6z
+2. SVM Model details are acquired from **An Introduction to Statistical Learning with Applications in R** . Read more: http://www-bcf.usc.edu/~gareth/ISL/
+
